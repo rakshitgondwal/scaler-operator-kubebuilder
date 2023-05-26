@@ -18,11 +18,14 @@ package controller
 
 import (
 	"context"
+	"log"
+	"time"
 
+	v1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	batchv1 "rakshitgondwal/project/api/v1"
 )
@@ -47,11 +50,57 @@ type ScalerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.4/pkg/reconcile
 func (r *ScalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log.Printf("reconcile called")
+	scaler := &batchv1.Scaler{}
+	err := r.Get(ctx, req.NamespacedName, scaler)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
-	// TODO(user): your logic here
+	startTime := scaler.Spec.Start
+	endTime := scaler.Spec.End
+	replicas := scaler.Spec.Replicas
 
-	return ctrl.Result{}, nil
+	currentHour := time.Now().UTC().Hour()
+
+	if currentHour >= startTime && currentHour <= endTime {
+		if err := scaleDeployment(scaler, r, ctx, replicas); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{RequeueAfter: time.Duration(30 * time.Second)}, nil
+}
+
+func scaleDeployment(scaler *batchv1.Scaler, r *ScalerReconciler, ctx context.Context, replicas int32) error {
+	for _, deploy := range scaler.Spec.Deployments {
+		deployment := &v1.Deployment{}
+		err := r.Get(ctx, types.NamespacedName{
+			Namespace: deploy.Namespace,
+			Name:      deploy.Name,
+		},
+			deployment,
+		)
+		if err != nil {
+			return err
+		}
+
+		if deployment.Spec.Replicas != &replicas {
+			deployment.Spec.Replicas = &replicas
+			err := r.Update(ctx, deployment)
+			if err != nil {
+				scaler.Status.Status = batchv1.FAILED
+				return err
+			}
+			scaler.Status.Status = batchv1.SUCCESS
+
+			err = r.Status().Update(ctx, scaler)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
