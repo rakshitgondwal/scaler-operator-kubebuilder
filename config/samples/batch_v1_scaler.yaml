@@ -9,4 +9,10 @@ metadata:
     app.kubernetes.io/created-by: scaler-operator
   name: scaler-sample
 spec:
-  # TODO(user): Add fields here
+  spec:
+  start: 5
+  end: 10
+  replicas: 4
+  deployments:
+    - name: nginx
+      namespace: default
