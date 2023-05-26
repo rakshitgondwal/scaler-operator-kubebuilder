@@ -25,7 +25,6 @@ const (
 	FAILED  = "Failed"
 )
 
-
 // ScalerSpec defines the desired state of Scaler
 type ScalerSpec struct {
 	// +kubebuilder:validation:Maximum=23
